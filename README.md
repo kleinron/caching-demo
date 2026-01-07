@@ -23,6 +23,7 @@ Routing Proxy (port 5000) [HRW/Rendezvous Hashing]
 - **HRW Routing**: Consistent hashing using MurmurHash3
 - **Thundering Herd Prevention**: Request deduplication for concurrent cache misses
 - **Multiple Cache Nodes**: Distributed caching across multiple proxy servers
+- **ETag Support**: Efficient cache validation using MurmurHash3-based ETags with 304 Not Modified responses
 
 ## Prerequisites
 
@@ -134,7 +135,29 @@ done
 
 You'll see that different images route to different cache nodes, and the same image always routes to the same node.
 
-### 4. Health Checks
+### 4. Test ETag Support
+
+Get an image and note the ETag:
+```bash
+curl -I http://localhost:4000/images/lion.jpeg | grep ETag
+```
+
+Request with If-None-Match header (should get 304 Not Modified):
+```bash
+ETAG=$(curl -I http://localhost:4000/images/lion.jpeg 2>/dev/null | grep -i "^ETag:" | cut -d' ' -f2 | tr -d '\r')
+curl -I -H "If-None-Match: ${ETAG}" http://localhost:4000/images/lion.jpeg
+```
+
+Or use the test scripts:
+```bash
+# Bash script
+./test-etag.sh
+
+# Node.js script (more detailed output)
+npm run test:etag
+```
+
+### 5. Health Checks
 
 Check the routing proxy:
 ```bash
@@ -215,6 +238,7 @@ cache-talk/
 | `npm run start:proxy3` | Start cache proxy on port 4002 |
 | `npm run start:router` | Start routing proxy (port 5000) |
 | `npm run dev` | Run the demo/examples |
+| `npm run test:etag` | Test ETag functionality |
 
 ## Common Issues
 
@@ -267,6 +291,10 @@ selected_node = node with max(score)
 - **LRU Eviction**: When cache is full, least recently used item is removed
 - **TTL Expiration**: Items expire after 60 seconds
 - **Thundering Herd Prevention**: Concurrent requests for same key share one fetch
+- **ETag Validation**: Each cached item has a MurmurHash3-based ETag for efficient validation
+  - Format: `"hash"` (e.g., `"1234567890"`)
+  - Clients can use `If-None-Match` header to receive 304 Not Modified responses
+  - Saves bandwidth by avoiding re-transmission of unchanged content
 
 ## Example Session
 

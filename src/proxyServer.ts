@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import axios from "axios";
 import mime from "mime-types";
+import murmur from "murmurhash3js-revisited";
 import { Cache } from "./Cache";
 
 // Parse command line arguments
@@ -10,6 +11,18 @@ const PORT = portArg ? parseInt(portArg.split("=")[1]) : 4000;
 
 const ORIGIN_URL = "http://localhost:3000";
 const app = express();
+
+/**
+ * Generates an ETag for the given buffer using MurmurHash3
+ * @param buffer The buffer to hash
+ * @returns ETag string with the hash value
+ */
+function generateETag(buffer: Buffer): string {
+  // Use MurmurHash3 to generate a hash of the buffer content
+  // MurmurHash3 is highly sensitive to any data changes, so the hash alone is sufficient
+  const hash = murmur.x86.hash32(buffer.toString("binary"));
+  return `"${hash}"`;
+}
 
 // Create cache with 1-minute TTL and 50 item capacity
 const imageCache = new Cache(
@@ -30,10 +43,14 @@ const imageCache = new Cache(
       // Convert to Buffer once and store in cache
       const buffer = Buffer.from(response.data);
       
+      // Generate ETag for the content
+      const etag = generateETag(buffer);
+      
       return {
         data: buffer,
         contentType: contentType,
-        contentLength: buffer.length
+        contentLength: buffer.length,
+        etag: etag
       };
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -74,12 +91,29 @@ app.get("/images/:filename", async (req: Request, res: Response) => {
     // Try to get from cache (will fetch from origin if cache miss)
     const cachedEntry = await imageCache.get(cacheKey);
     
+    // Get client's If-None-Match header (contains ETags)
+    const clientETag = req.headers["if-none-match"];
+    
+    // Check if client's ETag matches current content
+    if (clientETag && clientETag === cachedEntry.etag) {
+      console.log(`  ✓ 304 Not Modified: ${filename} (ETag match)`);
+      
+      // Client has the current version, send 304 Not Modified
+      res.setHeader("ETag", cachedEntry.etag);
+      res.setHeader("X-Proxy-Server", `proxy-${PORT}`);
+      res.setHeader("X-Cache-Status", "VALIDATED");
+      res.status(304).end();
+      return;
+    }
+    
     console.log(`  ✓ Served: ${filename}`);
     
     // Set response headers
     res.setHeader("Content-Type", cachedEntry.contentType);
     res.setHeader("Content-Length", cachedEntry.contentLength);
+    res.setHeader("ETag", cachedEntry.etag);
     res.setHeader("X-Proxy-Server", `proxy-${PORT}`);
+    res.setHeader("X-Cache-Status", "HIT");
     
     // Send the cached data (already a Buffer)
     res.send(cachedEntry.data);

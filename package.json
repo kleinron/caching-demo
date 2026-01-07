@@ -13,7 +13,8 @@
     "start:proxy2": "npm run build && node dist/proxyServer.js --port=4001",
     "start:proxy3": "npm run build && node dist/proxyServer.js --port=4002",
     "start:router": "npm run build && node dist/routingProxy.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:etag": "node test-etag-example.js"
   },
   "keywords": [],
   "author": "",
